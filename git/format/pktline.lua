@@ -27,6 +27,9 @@ local function read(r, isBinary)
 		error('not enough data for pkt-line header', 2)
 	end
 	local len = tonumber(lenStr, 16)
+	if not len then
+		error(string.format('malformed pkt-line length %q', lenStr), 2)
+	end
 	if len < 4 then
 		return nil, len
 	end
@@ -35,7 +38,7 @@ local function read(r, isBinary)
 	end
 	local line = r.read(len - 4)
 	if not line or #line ~= len - 4 then
-		error('not enough pkt-line data. expect ' .. (len - 4) .. ' got ' .. #line, 2)
+		error('not enough pkt-line data. expect ' .. (len - 4) .. ' got ' .. (line and #line), 2)
 	end
 	if not isBinary and line:sub(-1) == '\n' then
 		line = line:sub(1, -2)

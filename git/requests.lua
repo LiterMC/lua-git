@@ -35,8 +35,13 @@ local function makeHeaders(headers)
 	return headers
 end
 
+local requestHashBase = string.format('#%04x', math.random() * 0xffff)
+local reqHashCount = 0
+
 local function doRequest(req, onSuccess)
-	local url = assert(req.url)
+	reqHashCount = reqHashCount + 1
+	req.url = req.url .. requestHashBase .. string.format('%04x', reqHashCount)
+	local url = req.url
 	http.request(req)
 	local resp
 	while true do
@@ -146,7 +151,8 @@ local function requestCommand(gitUrl, command, capabilities, args, resProcessor)
 				['Accept'] = acceptableContentType,
 			}),
 			body = reqData,
-			binary = true
+			binary = true,
+			stream = true,
 		},
 		function(res)
 			local respHeaders = res.getResponseHeaders()

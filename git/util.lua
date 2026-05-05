@@ -15,10 +15,25 @@
 -- along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --- END HEADER
 
+local expect = require('cc.expect')
+
+local function yieldFor(event, ...)
+	local data
+	repeat
+		data = table.pack(coroutine.yield(event, ...))
+		if data[1] == 'terminate' then
+			error('Terminated', 0)
+		end
+	until data[1] == event
+	return table.unpack(data, 2, data.n)
+end
+
 local YIELD_READ_SYM = {}
 
 local function newYieldReader(initData)
-	local buffer = initData -- nil means EOF
+	expect(1, initData, 'string', 'nil')
+
+	local buffer = initData or '' -- nil means EOF
 
 	local reader = {}
 
@@ -39,7 +54,7 @@ local function newYieldReader(initData)
 			end
 			local d
 			repeat
-				d = coroutine.yield(YIELD_READ_SYM)
+				d = yieldFor(YIELD_READ_SYM)
 				if not d then
 					buffer = nil
 					return nil
@@ -50,7 +65,7 @@ local function newYieldReader(initData)
 		end
 
 		while #buffer < count do
-			local d = coroutine.yield(YIELD_READ_SYM)
+			local d = yieldFor(YIELD_READ_SYM)
 			if not d then
 				local r = buffer
 				buffer = nil
@@ -66,7 +81,7 @@ local function newYieldReader(initData)
 	function reader.readAll()
 		local buf = ''
 		while true do
-			local d = coroutine.yield(YIELD_READ_SYM)
+			local d = yieldFor(YIELD_READ_SYM)
 			if not d then
 				break
 			end
@@ -79,12 +94,15 @@ local function newYieldReader(initData)
 end
 
 local function resumeYieldReader(thread, data)
+	expect(1, thread, 'thread')
+	expect(2, data, 'string')
+
 	if coroutine.status(thread) == 'dead' then
 		return
 	end
-	data = {data}
+	data = {YIELD_READ_SYM, data}
 	while true do
-		res = table.pack(coroutine.resume(thread, table.unpack(data, 1, data.n)))
+		local res = table.pack(coroutine.resume(thread, table.unpack(data, 1, data.n)))
 		if not res[1] then
 			error(res[2], 0)
 		end
@@ -95,7 +113,35 @@ local function resumeYieldReader(thread, data)
 			return
 		end
 		data = table.pack(coroutine.yield(table.unpack(res, 2, res.n)))
+		if data[1] == 'terminate' then
+			error('Terminated', 0)
+		end
 	end
+end
+
+local function newCounterWriter()
+	local writer = {}
+	local count = 0
+
+	function writer.write(data)
+		if type(data) == 'number' then
+			count = count + 1
+		else
+			count = count + #data
+		end
+	end
+
+	function writer.get()
+		return count
+	end
+
+	function writer.getAndReset()
+		local v = count
+		count = 0
+		return v
+	end
+
+	return writer
 end
 
 local function newTeeReader(rawReader, writer)
@@ -126,6 +172,29 @@ local function newTeeReader(rawReader, writer)
 	return reader
 end
 
+local function newMultiWriter(...)
+	local writers = {...}
+	if type(writers[1]) ~= 'table' or not writers[1].write then
+		expect(1, writers[1], 'writer')
+	end
+
+	for i, w in ipairs(writers) do
+		if type(w) ~= 'table' or not w.write then
+			expect(i, w, 'writer')
+		end
+	end
+
+	local writer = {}
+
+	function writer.write(data)
+		for _, w in ipairs(writers) do
+			w.write(data)
+		end
+	end
+
+	return writer
+end
+
 local function mustRead(reader, count, errMessage)
 	local data = reader.read(count)
 	if not data or count and #data < count then
@@ -135,8 +204,11 @@ local function mustRead(reader, count, errMessage)
 end
 
 return {
+	waitForAny = waitForAny,
 	newYieldReader = newYieldReader,
 	resumeYieldReader = resumeYieldReader,
+	newCounterWriter = newCounterWriter,
 	newTeeReader = newTeeReader,
+	newMultiWriter = newMultiWriter,
 	mustRead = mustRead,
 }

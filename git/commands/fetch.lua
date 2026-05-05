@@ -54,14 +54,11 @@ local function commandFetch(gitUrl, capabilities, kwargs)
 
 	local packdata = nil
 
-	local packfileDataProcessor = coroutine.create(function(initData)
-		if not initData then
-			return
-		end
-
-		local reader = gitUtil.newYieldReader(initData)
+	local packfileDataProcessor = coroutine.create(function()
+		local reader = gitUtil.newYieldReader()
 		packdata = packfile.read(reader, hashMethod)
 	end)
+	coroutine.resume(packfileDataProcessor)
 
 	local remoteConsole = console.newSubConsole('rmt: ')
 	local processors = {}

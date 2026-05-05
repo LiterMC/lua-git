@@ -18,6 +18,7 @@
 local zlib = require('compress.zlib')
 
 local console = require('git.console')
+local unit = require('git.format.unit')
 local gitUtil = require('git.util')
 local mustRead = gitUtil.mustRead
 
@@ -41,7 +42,8 @@ local OBJ_REF_DELTA = 7
 local function read(reader, hashMethod)
 	local digest = hashMethod.newDigest()
 	local hashSize = digest.size
-	reader = gitUtil.newTeeReader(reader, digest)
+	local counter = gitUtil.newCounterWriter()
+	reader = gitUtil.newTeeReader(reader, gitUtil.newMultiWriter(digest, counter))
 
 	-- parse packfile header
 	local magicHeader = mustRead(reader, 4)
@@ -53,14 +55,48 @@ local function read(reader, hashMethod)
 	local receivedCount = 0
 	local receivedObjects = {}
 
-	local recvLogFmt = 'Receiving objects: %d%% (%d/%d)\r'
+	local recvLogFmt = 'Receiving objects: %d%% (%d/%d) %s | %s/s'
 	local recvCsl = console.newSubConsole()
+	local lastDownloaded = 0
+	local lastLogTime = os.epoch('utc')
+	local downloadSpeed = 0
+	local logUpdateInterval = 500
 
-	local function logProg()
-		recvCsl.write(recvLogFmt:format(receivedCount / packObjCount * 100, receivedCount, packObjCount))
+	local function logProg(forceLog)
+		local now = os.epoch('utc')
+		local dt = now - lastLogTime
+		if not forceLog and dt < logUpdateInterval then
+			return
+		end
+		local totalDownloaded = counter.get()
+		if dt >= logUpdateInterval then
+			downloadSpeed = (totalDownloaded - lastDownloaded) / dt * 1000
+			lastDownloaded, lastLogTime = totalDownloaded, now
+		end
+		recvCsl.clearLine(true)
+		recvCsl.write(string.format(
+			recvLogFmt,
+			receivedCount / packObjCount * 100,
+			receivedCount,
+			packObjCount,
+			unit.bytes(totalDownloaded),
+			unit.bytes(downloadSpeed)
+		))
+	end
+
+	local lastYield = os.epoch('utc')
+	os.queueEvent('')
+	os.pullEvent('')
+	local function yieldIfNeeded()
+		if os.epoch('utc') - lastYield > 500 then
+			os.queueEvent('')
+			os.pullEvent('')
+			lastYield = os.epoch('utc')
+		end
 	end
 
 	-- parse objects
+	logProg(true)
 	for _ = 1, packObjCount do
 		local objType, uncompressedObjSize
 		local refObjId = nil
@@ -78,17 +114,26 @@ local function read(reader, hashMethod)
 		if objType == OBJ_INVALID or objType == 5 then
 			error(string.format('packfile: invalid object type (%d)', objType))
 		elseif objType == OBJ_OFS_DELTA then
-			error('packfile: TODO OBJ_OFS_DELTA')
+			error('packfile: TODO: OBJ_OFS_DELTA')
 		elseif objType == OBJ_REF_DELTA then
 			refObjId = mustRead(reader, hashSize)
 		end
 		local zr = zlib.newReader(reader)
-		local uncompressedObj = zr.readAll()
+		local uncompressedObj = ''
+		while true do
+			local d = zr.read(8192)
+			if not d then
+				break
+			end
+			uncompressedObj = uncompressedObj .. d
+			logProg()
+			yieldIfNeeded()
+		end
 		if #uncompressedObj ~= uncompressedObjSize then
 			error(string.format('packfile: object size mismatch. expect %d, got %d', uncompressedObjSize, #uncompressedObj))
 		end
 		receivedCount = receivedCount + 1
-		logProg()
+		logProg(true)
 		receivedObjects[receivedCount] = {
 			type = objType,
 			data = uncompressedObj,
@@ -99,12 +144,11 @@ local function read(reader, hashMethod)
 	local fileHash = digest.sum()
 	local checkHash = mustRead(reader, hashSize)
 	if checkHash ~= fileHash then
-		printError(checkHash:gsub('.', function(b) return string.format('%02x', b:byte(1)) end))
-		printError(fileHash:gsub('.', function(b) return string.format('%02x', b:byte(1)) end))
 		error('packfile: invalid checksum')
 	end
 
-	recvCsl.write(string.format('Receiving objects: %d%% (%d/%d), done.\n', receivedCount / packObjCount * 100, receivedCount, packObjCount))
+	recvCsl.clearLine(true)
+	recvCsl.write(string.format('Receiving objects: %d%% (%d/%d), done.', receivedCount / packObjCount * 100, receivedCount, packObjCount))
 
 	return {
 		version = packVersion,

@@ -173,14 +173,16 @@ function console.clear()
 	rawTerm.setCursorPos(1, 1)
 end
 
-function console.clearLine()
+function console.clearLine(delayRedraw)
 	local line = lines[cursorY]
 	line[1] = ""
 	line[2] = ""
 	line[3] = ""
 	cursorX = 1
 
-	redraw()
+	if not delayRedraw then
+		redraw()
+	end
 end
 
 function console.blit(text, fgColors, bgColors)
@@ -310,6 +312,16 @@ function console.newSubConsole(prefix)
 
 	function subConsole.setCursorPos(x, y)
 		cursorX, cursorY = x, y
+	end
+
+	function subConsole.clearLine(delayRedraw)
+		if cursorY then
+			local ccx, ccy = console.getCursorPos()
+			console.setCursorPos(1, cursorY)
+			console.clearLine(delayRedraw)
+			cursorX, cursorY = console.getCursorPos()
+			console.setCursorPos(ccx, ccy)
+		end
 	end
 
 	function subConsole.write(text)
