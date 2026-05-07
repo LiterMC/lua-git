@@ -19,26 +19,20 @@ package.path = package.path .. ';../../?;../../?.lua;../../?/init.lua'
 
 local expect = require('cc.expect')
 
+local commands = require('git.commands')
+local help = require('git.commands.help')
 local console = require('git.console')
 
-local cmdFetch = require('git.commands.fetch')
-local cmdLsRefs = require('git.commands.ls_refs')
-
-local function main()
-	local gitUrl = 'https://github.com/ValkyrienSkies/Valkyrien-Skies-2'
-	-- local gitUrl = 'https://github.com/zyxkad/test'
-
-	local refs = cmdLsRefs.request(gitUrl, {})
-	local headData = refs.HEAD
-	if not headData then
-		error('HEAD not found', 0)
+local function main(subCommand, ...)
+	if subCommand == nil then
+		return help.execute()
 	end
-	print('HEAD:', headData.objid)
-	cmdFetch.request(gitUrl, {}, {
-		wants = {
-			headData.objid,
-		},
-	})
+	local subCmd = commands[subCommand]
+	if not subCmd then
+		printError(string.format('Command %q does not exists, use `git help` for help', subCmd))
+		return
+	end
+	return subCmd.execute(...)
 end
 
 console.run(main, ...)

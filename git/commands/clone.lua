@@ -15,8 +15,27 @@
 -- along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --- END HEADER
 
-return {
-	completion = function(shell, argN, partial, args)
-		return
-	end,
-}
+local cmdFetch = require('git.commands.fetch')
+local cmdLsRefs = require('git.commands.ls_refs')
+
+local cmd = {}
+
+function cmd.completion(shell, argN, partial, args)
+	return
+end
+
+function cmd.execute(gitUrl)
+	local refs = cmdLsRefs.request(gitUrl, {})
+	local headData = refs.HEAD
+	if not headData then
+		error('HEAD not found', 0)
+	end
+	print('HEAD:', headData.objid)
+	cmdFetch.request(gitUrl, {}, {
+		wants = {
+			headData.objid,
+		},
+	})
+end
+
+return cmd

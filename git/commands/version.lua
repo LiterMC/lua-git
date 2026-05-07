@@ -17,8 +17,10 @@
 
 local constants = require('git.constants')
 
-return {
-	run = function(...)
-		print(constants.USER_AGENT)
-	end
-}
+local cmd = {}
+
+function cmd.execute()
+	print(constants.USER_AGENT)
+end
+
+return cmd

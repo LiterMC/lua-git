@@ -17,15 +17,12 @@
 
 local expect = require('cc.expect')
 
+local console = require('git.console')
 local requests = require('git.requests')
 local requestCommand = requests.requestCommand
 
 local pktline = require('git.format.pktline')
 local readPktLine = pktline.read
-
-local function errorUnexpectedPktN(pktN, stacks)
-	error(string.format('unexpected pkt-line (%04x)', pktN), stacks == 0 and 0 or ((stacks or 1) + 1))
-end
 
 -- https://git-scm.com/docs/protocol-v2#_ls_refs
 local function commandLsRefs(gitUrl, capabilities, ...)
@@ -47,7 +44,7 @@ local function commandLsRefs(gitUrl, capabilities, ...)
 			line, pktN = readPktLine(res)
 			if not line then
 				if pktN ~= 0 then
-					errorUnexpectedPktN(pktN)
+					error(string.format('unexpected pkt-line (%04x)', pktN))
 				end
 				break
 			end
@@ -92,6 +89,77 @@ local function commandLsRefs(gitUrl, capabilities, ...)
 	end)
 end
 
-return {
-	request = commandLsRefs,
-}
+local function refComparator2(refA, refB)
+	local partsA, partsB = refA:gmatch('[^.]+'), refB:gmatch('[^.]+')
+	while true do
+		local pa, pb = partsA(), partsB()
+		if not pb then
+			if not pa then
+				return nil
+			end
+			return false
+		end
+		if not pa then
+			return true
+		end
+		if pa ~= pb then
+			local na, nb = tonumber(pa), tonumber(pb)
+			if na and nb and na ~= nb then
+				return na < nb
+			end
+			return pa < pb
+		end
+	end
+end
+
+local function refComparator(refA, refB)
+	local partsA, partsB = refA:gmatch('[^/]+'), refB:gmatch('[^/]+')
+	while true do
+		local pa, pb = partsA(), partsB()
+		if not pb then
+			if not pa then
+				return nil
+			end
+			return false
+		end
+		if not pa then
+			return true
+		end
+		local res = refComparator2(pa, pb)
+		if res ~= nil then
+			return res
+		end
+	end
+end
+
+local cmd = {}
+
+cmd.request = commandLsRefs
+
+function cmd.execute(gitUrl, ...)
+	local refs = commandLsRefs(gitUrl, {}, ...)
+	local refsNames = {}
+	for name, data in pairs(refs) do
+		refsNames[#refsNames + 1] = name
+	end
+	table.sort(refsNames, refComparator)
+
+	local w, h = term.getSize()
+	local i = 1
+	while i < #refsNames do
+		if i >= h then
+			console.write(':')
+			local _, key = os.pullEvent('key')
+			console.clearLine()
+			if key == keys.q then
+				os.pullEvent('char') -- char event is always followed
+				break
+			end
+		end
+		local name = refsNames[i]
+		print(name)
+		i = i + 1
+	end
+end
+
+return cmd

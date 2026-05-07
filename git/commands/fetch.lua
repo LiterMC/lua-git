@@ -40,8 +40,6 @@ local function commandFetch(gitUrl, capabilities, kwargs)
 	expect(2, capabilities, 'table')
 	expect(3, kwargs, 'table')
 
-	console.setCursorBlink(true)
-
 	local hashMethod = sha1
 
 	-- TODO: support other request / response sections
@@ -115,6 +113,23 @@ local function commandFetch(gitUrl, capabilities, kwargs)
 	return packdata
 end
 
-return {
-	request = commandFetch,
-}
+local function completionRefs(prefix)
+	return {}
+end
+
+local cmd = {}
+
+cmd.request = commandFetch
+
+function cmd.completion(shell, argN, partial, args)
+	if argN == 1 then
+		return completionRefs(partial)
+	end
+	return
+end
+
+function cmd.execute(ref)
+	--
+end
+
+return cmd

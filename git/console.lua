@@ -28,6 +28,13 @@ local cursorX, cursorY = 1, 1
 local cursorYOffset = 0
 local fgColor, bgColor = rawTerm.getTextColor(), rawTerm.getBackgroundColor()
 
+function console.getRawTerm()
+	if rawTerm == term then
+		return term.current()
+	end
+	return rawTerm
+end
+
 local function getRawCursorPos(cursorX, cursorY)
 	local w, h = rawTerm.getSize()
 
@@ -59,6 +66,10 @@ function console.setCursorPos(x, y)
 	x = math.min(math.max(x, 1), #lines[y][1] + 1)
 	cursorX, cursorY = x, y
 	rawTerm.setCursorPos(getRawCursorPos(x, y))
+end
+
+function console.getSize()
+	return rawTerm.getSize()
 end
 
 function console.getCursorBlink()

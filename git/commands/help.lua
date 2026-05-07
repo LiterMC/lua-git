@@ -15,11 +15,13 @@
 -- along with this program.  If not, see <https://www.gnu.org/licenses/>.
 --- END HEADER
 
-return {
-	version = require('git.commands.version'),
-	help = require('git.commands.help'),
+local cmd = {}
 
-	['ls-refs'] = require('git.commands.ls_refs'),
+function cmd.completion(shell, argN, partial, args)
+end
 
-	clone = require('git.commands.clone'),
-}
+function cmd.execute(subCmd)
+	print('TODO: help page')
+end
+
+return cmd
